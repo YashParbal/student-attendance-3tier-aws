@@ -1,0 +1,750 @@
+================================================================================
+                 STUDENT ATTENDANCE SYSTEM DEPLOYMENT GUIDE
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+1. Security Group Port Configurations
+2. Database Setup (AWS RDS MySQL)
+3. Backend Application Server Setup (Python + Flask + Gunicorn)
+4. Frontend Application Server Setup (Nginx Web Server)
+5. Nginx Configuration File (default)
+6. End-to-End Verification Procedures
+7. Application Flow
+
+
+================================================================================
+1. SECURITY GROUP PORT CONFIGURATIONS
+================================================================================
+
+You need three distinct Security Groups (SG) in AWS EC2/RDS.
+
+The architecture is:
+
+    FRONTEND EC2
+         |
+         | TCP 5000
+         v
+    BACKEND EC2
+         |
+         | TCP 3306
+         v
+    AWS RDS MYSQL
+
+
+A. FRONTEND EC2 SECURITY GROUP
+   ----------------------------
+
+- Inbound Rules:
+  * Type: HTTP | Port: 80 | Protocol: TCP | Source: 0.0.0.0/0
+  * Type: SSH  | Port: 22 | Protocol: TCP | Source: Your IP Address
+
+- Outbound Rules:
+  * Type: All Traffic | Destination: 0.0.0.0/0
+
+
+B. BACKEND EC2 SECURITY GROUP
+   ---------------------------
+
+- Inbound Rules:
+  * Type: Custom TCP | Port: 5000 | Protocol: TCP
+    Source: Frontend EC2 Security Group
+
+  * Type: SSH | Port: 22 | Protocol: TCP
+    Source: Your IP Address
+
+- Outbound Rules:
+  * Type: All Traffic | Destination: 0.0.0.0/0
+
+
+C. AWS RDS MYSQL SECURITY GROUP
+   -----------------------------
+
+- Inbound Rules:
+  * Type: MYSQL/Aurora | Port: 3306 | Protocol: TCP
+    Source: Backend EC2 Security Group
+
+- Outbound Rules:
+  * Type: All Traffic | Destination: 0.0.0.0/0
+
+
+IMPORTANT SECURITY RULES
+------------------------
+
+Do NOT expose port 3306 to 0.0.0.0/0.
+
+Do NOT expose port 5000 to 0.0.0.0/0.
+
+Port 5000 must only accept traffic from the Frontend EC2
+Security Group.
+
+Port 3306 must only accept traffic from the Backend EC2
+Security Group.
+
+
+================================================================================
+2. DATABASE SETUP (AWS RDS MYSQL)
+================================================================================
+
+1. Provision AWS RDS MySQL:
+
+   - DB Engine: MySQL 8.0 or current supported MySQL version
+   - Master Username: attendance_admin
+   - Publicly Accessible: No
+   - VPC Security Group: RDS Security Group
+
+   Record the RDS endpoint.
+
+
+2. Connect to the database from Backend EC2:
+
+   mysql -h <RDS_ENDPOINT> -u attendance_admin -p
+
+
+3. Create the database:
+
+   CREATE DATABASE IF NOT EXISTS attendance_db;
+   USE attendance_db;
+
+
+4. Create the attendance table:
+
+   CREATE TABLE IF NOT EXISTS attendance (
+       id INT AUTO_INCREMENT PRIMARY KEY,
+       student_name VARCHAR(120) NOT NULL,
+       roll_number VARCHAR(40) NOT NULL,
+       course VARCHAR(100) NOT NULL,
+       attendance_date DATE NOT NULL,
+       status ENUM('Present', 'Absent') NOT NULL,
+       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+       INDEX idx_attendance_date (attendance_date),
+       INDEX idx_attendance_roll (roll_number),
+       INDEX idx_attendance_course (course)
+   );
+
+
+5. Verify:
+
+   SHOW TABLES;
+
+   DESCRIBE attendance;
+
+
+6. Verify records:
+
+   SELECT * FROM attendance
+   ORDER BY created_at DESC;
+
+
+The complete SQL is in:
+
+   database/schema.sql
+
+
+================================================================================
+3. BACKEND APPLICATION SERVER SETUP
+   PYTHON + FLASK + GUNICORN
+================================================================================
+
+1. Connect to Backend EC2:
+
+   ssh -i your-key.pem ubuntu@<BACKEND_EC2_PUBLIC_IP>
+
+
+2. Install system dependencies:
+
+   sudo apt update
+   sudo apt install -y python3 python3-pip python3-venv git mysql-client
+
+
+3. Create the backend directory:
+
+   mkdir -p ~/attendance-backend
+   cd ~/attendance-backend
+
+
+4. Copy these files into ~/attendance-backend:
+
+   - app.py
+   - database.py
+   - requirements.txt
+   - .env.example
+
+
+5. Create the virtual environment:
+
+   python3 -m venv venv
+   source venv/bin/activate
+
+
+6. Install Python modules:
+
+   pip install --upgrade pip
+   pip install -r requirements.txt
+
+
+7. Create the environment file:
+
+   cp .env.example .env
+
+   nano .env
+
+
+   Set:
+
+   DB_HOST=<RDS_ENDPOINT>
+   DB_PORT=3306
+   DB_USER=attendance_admin
+   DB_PASSWORD=<RDS_PASSWORD>
+   DB_NAME=attendance_db
+
+
+IMPORTANT:
+
+Do not put the RDS password into:
+
+   index.html
+   script.js
+   style.css
+
+
+8. Test RDS connectivity:
+
+   mysql -h <RDS_ENDPOINT> -u attendance_admin -p
+
+
+9. Test the backend manually:
+
+   python3 app.py
+
+
+   The Flask application listens on:
+
+   0.0.0.0:5000
+
+
+10. From the Backend EC2 itself, test:
+
+    curl http://127.0.0.1:5000/api/health
+
+
+    Expected:
+
+    {"database":"connected","service":"Student Attendance Backend","status":"healthy"}
+
+
+11. Test the attendance API:
+
+    curl http://127.0.0.1:5000/api/attendance
+
+
+12. Stop the manual server:
+
+    CTRL + C
+
+
+13. Create the production systemd service:
+
+    sudo nano /etc/systemd/system/attendance-backend.service
+
+
+14. The project already contains:
+
+    backend/attendance-backend.service
+
+
+    Copy its content into the systemd file.
+
+    The important service configuration is:
+
+    -----------------------------------------------------------------------------
+
+    [Unit]
+    Description=Gunicorn instance to serve Student Attendance Backend
+    After=network.target
+
+    [Service]
+    User=ubuntu
+    Group=www-data
+    WorkingDirectory=/home/ubuntu/attendance-backend
+    Environment="PATH=/home/ubuntu/attendance-backend/venv/bin"
+    Environment="DB_HOST=<RDS_ENDPOINT>"
+    Environment="DB_PORT=3306"
+    Environment="DB_USER=attendance_admin"
+    Environment="DB_PASSWORD=<RDS_PASSWORD>"
+    Environment="DB_NAME=attendance_db"
+    ExecStart=/home/ubuntu/attendance-backend/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 app:app
+
+    [Install]
+    WantedBy=multi-user.target
+
+    -----------------------------------------------------------------------------
+
+
+15. Start and enable the backend:
+
+    sudo systemctl daemon-reload
+    sudo systemctl start attendance-backend
+    sudo systemctl enable attendance-backend
+
+
+16. Check status:
+
+    sudo systemctl status attendance-backend
+
+
+17. Check logs if there is a problem:
+
+    sudo journalctl -u attendance-backend -n 100 --no-pager
+
+
+18. Confirm port 5000 is listening:
+
+    sudo ss -lntp | grep 5000
+
+
+================================================================================
+4. FRONTEND APPLICATION SERVER SETUP
+   NGINX WEB SERVER
+================================================================================
+
+1. Connect to Frontend EC2:
+
+   ssh -i your-key.pem ubuntu@<FRONTEND_EC2_PUBLIC_IP>
+
+
+2. Install Nginx:
+
+   sudo apt update
+   sudo apt install -y nginx
+
+
+3. Deploy the frontend files:
+
+   sudo mkdir -p /var/www/html
+
+
+4. Copy these files into /var/www/html/:
+
+   - index.html
+   - style.css
+   - script.js
+
+
+5. The frontend JavaScript uses:
+
+   const BACKEND_API_URL = "";
+
+
+IMPORTANT:
+
+The browser does NOT directly call:
+
+   http://<BACKEND_EC2_PUBLIC_IP>:5000
+
+The browser calls:
+
+   /api/attendance
+
+Nginx receives that request on port 80 and forwards it to:
+
+   http://<BACKEND_EC2_PRIVATE_IP>:5000
+
+
+This keeps the Backend EC2 behind the Frontend EC2 and avoids
+exposing the backend API directly to the internet.
+
+
+6. Set permissions:
+
+   sudo chown -R www-data:www-data /var/www/html
+   sudo chmod -R 755 /var/www/html
+
+
+7. Verify frontend files:
+
+   ls -la /var/www/html/
+
+
+Expected:
+
+   index.html
+   style.css
+   script.js
+
+
+================================================================================
+5. NGINX CONFIGURATION FILE
+================================================================================
+
+The project contains:
+
+   nginx/default
+
+
+Copy it to:
+
+   /etc/nginx/sites-available/default
+
+
+Run:
+
+   sudo cp /path/to/project/nginx/default /etc/nginx/sites-available/default
+
+
+IMPORTANT:
+
+Replace:
+
+   <BACKEND_EC2_PRIVATE_IP>
+
+with the PRIVATE IPv4 address of the Backend EC2.
+
+Example:
+
+   proxy_pass http://10.0.25.123:5000/api/;
+
+
+The Nginx configuration is:
+
+   -----------------------------------------------------------------------------
+
+   server {
+       listen 80 default_server;
+       listen [::]:80 default_server;
+
+       server_name _;
+
+       root /var/www/html;
+       index index.html index.htm;
+
+       location / {
+           try_files $uri $uri/ /index.html;
+       }
+
+       location /api/ {
+           proxy_pass http://<BACKEND_EC2_PRIVATE_IP>:5000/api/;
+           proxy_http_version 1.1;
+
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+   }
+
+   -----------------------------------------------------------------------------
+
+
+The API routing is:
+
+   Browser
+      |
+      | http://<FRONTEND_PUBLIC_IP>/api/attendance
+      v
+   Nginx :80
+      |
+      | proxy
+      v
+   Backend EC2 PRIVATE IP :5000
+      |
+      v
+   Flask
+
+
+3. Test Nginx configuration:
+
+   sudo nginx -t
+
+
+Expected:
+
+   syntax is ok
+   test is successful
+
+
+4. Restart Nginx:
+
+   sudo systemctl restart nginx
+
+
+5. Enable Nginx at boot:
+
+   sudo systemctl enable nginx
+
+
+6. Check Nginx:
+
+   sudo systemctl status nginx
+
+
+================================================================================
+6. END-TO-END VERIFICATION PROCEDURES
+================================================================================
+
+1. Check RDS from Backend EC2:
+
+   mysql -h <RDS_ENDPOINT> -u attendance_admin -p
+
+
+2. Check Backend service:
+
+   sudo systemctl status attendance-backend
+
+
+3. Check Backend health:
+
+   curl http://127.0.0.1:5000/api/health
+
+
+Expected:
+
+   {"database":"connected","service":"Student Attendance Backend","status":"healthy"}
+
+
+4. Check attendance API directly from Backend EC2:
+
+   curl http://127.0.0.1:5000/api/attendance
+
+
+5. From Frontend EC2, test the Backend private IP:
+
+   curl http://<BACKEND_EC2_PRIVATE_IP>:5000/api/health
+
+
+Expected:
+
+   Healthy backend response.
+
+
+6. Check Nginx:
+
+   sudo nginx -t
+
+
+7. Check the frontend locally:
+
+   curl http://127.0.0.1/
+
+
+The HTML page should be returned.
+
+
+8. Open the application:
+
+   http://<FRONTEND_EC2_PUBLIC_IP>/
+
+
+9. The application should display:
+
+   - Student Name
+   - Roll Number
+   - Course
+   - Attendance Date
+   - Present / Absent
+   - Record Attendance button
+   - Attendance records
+   - Search
+   - Status filter
+   - Database connection status
+
+
+10. Enter a test record:
+
+    Student Name:
+        Naina Sharma
+
+    Roll Number:
+        DS001
+
+    Course:
+        Data Science
+
+    Attendance Date:
+        2026-09-18
+
+    Status:
+        Present
+
+
+11. Click:
+
+    Record Attendance
+
+
+12. The frontend sends:
+
+    POST /api/attendance
+
+
+13. Nginx forwards the request to:
+
+    Backend EC2 :5000
+
+
+14. Flask receives the request.
+
+15. Flask inserts the record into RDS MySQL.
+
+
+16. Verify the database:
+
+    mysql -h <RDS_ENDPOINT> -u attendance_admin -p
+
+    USE attendance_db;
+
+    SELECT *
+    FROM attendance
+    ORDER BY created_at DESC;
+
+
+17. Verify the website.
+
+    The frontend sends:
+
+    GET /api/attendance
+
+
+18. The new attendance record should appear in the table.
+
+
+19. Test an Absent record.
+
+    Use:
+
+    Status:
+        Absent
+
+
+20. Confirm both Present and Absent records appear correctly.
+
+
+================================================================================
+7. APPLICATION FLOW
+================================================================================
+
+INSERT ATTENDANCE
+-----------------
+
+Student
+   |
+   v
+Frontend EC2
+Nginx :80
+   |
+   | POST /api/attendance
+   v
+Backend EC2
+Flask + Gunicorn :5000
+   |
+   | INSERT
+   v
+AWS RDS MySQL
+attendance_db
+   |
+   v
+attendance table
+
+
+VIEW ATTENDANCE
+---------------
+
+Student
+   |
+   v
+Frontend EC2
+Nginx :80
+   |
+   | GET /api/attendance
+   v
+Backend EC2
+Flask + Gunicorn :5000
+   |
+   | SELECT
+   v
+AWS RDS MySQL
+attendance_db
+   |
+   v
+JSON response
+   |
+   v
+Frontend table
+
+
+HEALTH CHECK
+------------
+
+Browser
+   |
+   | GET /api/health
+   v
+Frontend Nginx :80
+   |
+   v
+Backend EC2 :5000
+   |
+   v
+RDS MySQL :3306
+
+
+================================================================================
+IMPORTANT
+================================================================================
+
+1. Do not put the RDS password inside frontend JavaScript.
+
+2. Do not expose RDS port 3306 to 0.0.0.0/0.
+
+3. Do not expose Backend port 5000 to 0.0.0.0/0.
+
+4. Allow Backend port 5000 only from the Frontend EC2 Security Group.
+
+5. Allow RDS port 3306 only from the Backend EC2 Security Group.
+
+6. The Frontend EC2 is the public web server.
+
+7. The Backend EC2 is the private application server.
+
+8. RDS is the database tier.
+
+9. The frontend JavaScript uses:
+
+       const BACKEND_API_URL = "";
+
+10. The browser requests:
+
+       /api/attendance
+
+11. Nginx forwards:
+
+       /api/attendance
+
+    to:
+
+       http://<BACKEND_EC2_PRIVATE_IP>:5000/api/attendance
+
+12. Replace <BACKEND_EC2_PRIVATE_IP> in the Nginx configuration.
+
+13. Do not replace the frontend API URL with the Backend public IP.
+
+14. Backend service:
+
+       sudo systemctl status attendance-backend
+
+15. Backend logs:
+
+       sudo journalctl -u attendance-backend -n 100 --no-pager
+
+16. Nginx test:
+
+       sudo nginx -t
+
+17. Nginx status:
+
+       sudo systemctl status nginx
+
+
+================================================================================
+END OF DEPLOYMENT GUIDE
+================================================================================

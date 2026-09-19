@@ -1,0 +1,18 @@
+[Unit]
+Description=Gunicorn instance to serve Student Attendance Backend
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/attendance-backend
+Environment="PATH=/home/ubuntu/attendance-backend/venv/bin"
+Environment="DB_HOST=<RDS_ENDPOINT>"
+Environment="DB_PORT=3306"
+Environment="DB_USER=attendance_admin"
+Environment="DB_PASSWORD=<RDS_PASSWORD>"
+Environment="DB_NAME=attendance_db"
+ExecStart=/home/ubuntu/attendance-backend/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 app:app
+
+[Install]
+WantedBy=multi-user.target
