@@ -1,5 +1,5 @@
-<img width="600" height="467" alt="Screenshot 2026-09-20 212744" src="https://github.com/user-attachments/assets/fddc6b8c-b1ed-4132-bb91-1daf0a4a8d09" />
-# Student Attendance System
+<img width="600" height="467" alt="Screenshot 2026-09-20 212744" src="https://github.com/user-attachments/assets/945466ad-6edf-43e4-a4a3-af3dd9f8a0b0" />
+
 
 A three-tier AWS application for recording and viewing student attendance.
 
@@ -58,7 +58,8 @@ student_attendance_3tier/
 ├── DEPLOYMENT_NOTES.txt
 └── .gitignore
 ```
-
+<img width="600" height="467" alt="Screenshot 2026-09-20 212744" src="https://github.com/user-attachments/assets/fddc6b8c-b1ed-4132-bb91-1daf0a4a8d09" />
+# Student Attendance System
 Deploy in this order:
 
 1. RDS MySQL
