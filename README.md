@@ -1,3 +1,4 @@
+<img width="600" height="467" alt="Screenshot 2026-09-20 212744" src="https://github.com/user-attachments/assets/fddc6b8c-b1ed-4132-bb91-1daf0a4a8d09" />
 # Student Attendance System
 
 A three-tier AWS application for recording and viewing student attendance.
