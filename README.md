@@ -46,7 +46,8 @@ student_attendance_3tier/
 │   ├── .env.example
 │   └── attendance-backend.service
 ├── database/
-│   └── schema.sql
+│   └── schema.sql<img width="777" height="589" alt="image" src="https://github.com/user-attachments/assets/b9a629e8-4da5-4ce5-aba0-fc57920131f8" />
+
 ├── frontend/
 │   ├── index.html
 │   ├── style.css
