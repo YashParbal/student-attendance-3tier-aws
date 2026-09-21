@@ -130,3 +130,109 @@ SHOW TABLES;
 DESCRIBE attendance;
 ![DATABASE CONFIGURATION] (<img width="900" height="602" alt="Screenshot 2026-09-21 032510" src="https://github.com/user-attachments/assets/414ec44f-0bd1-4893-acba-210cca68f3be" />
 )
+
+## Backend Application Setup
+
+After installing the required backend dependencies, the backend application files were created inside the `attendance-backend` directory. The main application files include `app.py` for the Flask application, `database.py` for database connectivity, `requirements.txt` for Python dependencies, and `.env.example` for the database environment variables.
+
+```bash
+cd ~/attendance-backend
+sudo nano app.py
+sudo nano database.py
+sudo nano requirements.txt
+sudo nano .env.example
+ls -a
+```
+<img width="1164" height="267" alt="Screenshot 2026-09-21 033402" src="https://github.com/user-attachments/assets/4392e501-7958-4dfc-8080-7bb4311d67df" />
+
+A Python virtual environment was then created to keep the application's Python packages isolated from the system Python installation. The virtual environment was activated and the required packages from `requirements.txt` were installed using `pip`.
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+<img width="984" height="374" alt="Screenshot 2026-09-21 033732" src="https://github.com/user-attachments/assets/6906aa7e-5089-474b-9ebd-8b85de11aed7" />
+
+
+The `.env.example` file was copied to `.env` and configured with the RDS database connection details. The Flask application was then started manually to verify that the backend was running correctly and that the `/api/health` endpoint could be accessed.
+
+```bash
+cp .env.example .env
+nano .env
+python3 app.py
+```
+<img width="1441" height="252" alt="Screenshot 2026-09-21 033954" src="https://github.com/user-attachments/assets/29334403-bf3a-4354-b937-6cedf14a0cc2" />
+
+
+After testing the Flask application, a `systemd` service was configured so that the backend could run as a persistent background service instead of requiring the Flask development server to be started manually. The service was reloaded, started, and enabled to automatically start when the server boots.
+
+```bash
+sudo nano /etc/systemd/system/attendance-backend.service
+sudo systemctl daemon-reload
+sudo systemctl start attendance-backend
+sudo systemctl enable attendance-backend
+```
+<img width="1527" height="341" alt="Screenshot 2026-09-21 034608" src="https://github.com/user-attachments/assets/e3e1d077-e9a0-4b9d-af6e-feed9fd6a4f8" />
+
+
+The backend was therefore configured to run as a managed service on the backend EC2 instance, ready to be accessed by the frontend through the private VPC network.
+
+## Frontend Setup
+
+The frontend was deployed on the **SRV FE 1** EC2 instance using Nginx. First, the Ubuntu package list was updated and Nginx was installed. The frontend files were then created inside `/var/www/html`, which is the default Nginx web root on Ubuntu. The application consists of `index.html`, `style.css`, and `script.js`.
+
+```bash
+sudo apt update
+sudo apt install -y nginx
+
+<img width="894" height="240" alt="Screenshot 2026-09-21 035446" src="https://github.com/user-attachments/assets/992bd0a9-bd9e-4e85-91ea-c9bfebde0221" />
+
+sudo mkdir -p /var/www/html
+cd /var/www/html
+
+sudo nano index.html
+sudo nano style.css
+sudo nano script.js
+```
+<img width="1150" height="179" alt="Screenshot 2026-09-21 035819" src="https://github.com/user-attachments/assets/a32dcc69-1398-4da1-a5dd-a8c348e66f9b" />
+
+
+Nginx was configured to serve the frontend on port 80 and reverse proxy API requests to the backend EC2 instance using its private IP address `10.0.11.11` and port `5000`. Requests to `/api/` are forwarded to the Flask backend, while normal requests are served from `/var/www/html`.
+
+```bash
+sudo nano /etc/nginx/sites-available/default
+```
+
+The Nginx configuration used was:
+
+```nginx
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    server_name _;
+
+    root /var/www/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://10.0.11.11:5000/api/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+<img width="1063" height="616" alt="Screenshot 2026-09-21 040147" src="https://github.com/user-attachments/assets/21fb2e0f-929e-4025-94b6-711f9da2b3be" />
+
+
+This configuration allows the frontend to be accessed through Nginx on port 80 while API requests are internally forwarded to the backend EC2 instance through the private VPC network.
