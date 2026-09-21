@@ -240,7 +240,8 @@ This configuration allows the frontend to be accessed through Nginx on port 80 w
 ## End-to-End Application Verification
 
 The complete three-tier Student Attendance System was successfully tested through the frontend. The application is accessible through the frontend EC2 instance using Nginx, and the **Database connected** indicator confirms that the backend is successfully communicating with the RDS MySQL database. A student attendance record was submitted successfully through the frontend, and the record was immediately displayed in the **Database Records** section with the student name, roll number, course, attendance date, and attendance status. This confirms that the complete request flow is working correctly from **Frontend → Nginx → Backend → RDS MySQL**.
-<img width="1431" height="759" alt="Screenshot 2026-09-21 042738" src="https://github.com/user-attachments/assets/549e04eb-a356-45e5-85f8-a7a47d76b523" />
+
 <img width="1532" height="827" alt="Screenshot 2026-09-21 042542 - Copy" src="https://github.com/user-attachments/assets/5b266d35-327c-490c-98c6-6d6ebddc2f20" />
+<img width="1431" height="759" alt="Screenshot 2026-09-21 042738" src="https://github.com/user-attachments/assets/549e04eb-a356-45e5-85f8-a7a47d76b523" />
 
 The final application therefore successfully demonstrates communication between all three tiers, with the frontend handling user interaction, the backend processing API requests, and Amazon RDS MySQL storing and returning attendance records.
